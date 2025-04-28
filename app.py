@@ -1,6 +1,7 @@
 import os
-# Ignore problematic Torch internal modules for Streamlit's file watcher.
+# Prevent Streamlit’s watcher from inspecting Torch’s internal modules.
 os.environ["STREAMLIT_IGNORE_FILES"] = "torch/_classes.py"
+
 import streamlit as st
 import torch
 from pathlib import Path
@@ -42,9 +43,6 @@ def show_feedback():
 @st.cache_resource(show_spinner="Loading model weights...", max_entries=1)
 def get_model_and_tokenizer():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg = None
-    tokenizer = None
-    model = None
     checkpoint_path = Path("wrong_llm.pt")
     if not checkpoint_path.exists():
         return None, None, device, "Checkpoint 'wrong_llm.pt' missing. Upload or train first."
@@ -54,8 +52,7 @@ def get_model_and_tokenizer():
         log_error("Failed to load .pt file.", exc=e)
         return None, None, device, f"Failed to load wrong_llm.pt. Details: {repr(e)}"
     try:
-        cfg_dict = checkpoint.get("cfg", {})
-        cfg = GPTConfig(**cfg_dict)
+        cfg = GPTConfig(**checkpoint.get("cfg", {}))
         tokenizer = ByteTokenizer()
         model = GPT(cfg).to(device)
         model.load_state_dict(checkpoint["model"])
@@ -106,7 +103,7 @@ with st.sidebar:
     st.markdown("---")
     if st.session_state.gen_stats["times"]:
         st.button("Clear stats", on_click=lambda: [st.session_state.gen_stats[k].clear() for k in st.session_state.gen_stats])
-    st.caption("[GitHub Repo](https://github.com/yourusername/wrong-llm-demo)")
+    st.caption("[GitHub Repo](https://github.com/THartMBA/wrong-llm-demo)")
 
 # --- UI Header ---
 st.title("🤖 Wrong LLM: Advanced Demo")
@@ -154,7 +151,11 @@ if submitted:
         st.session_state.gen_stats["responses"].append(len((response or '').split()))
         st.session_state.gen_stats["times"].append(gen_info)
         st.session_state.gen_stats["timestamps"].append(datetime.now())
-    st.experimental_rerun()
+    # Instead of experimental_rerun (which seems missing in your version),
+    # you might simply allow the UI to update naturally.
+    # If a full refresh is needed, remove this line or update Streamlit.
+    # For example, if you're on an updated version, you could use:
+    # st.experimental_rerun()
 
 # --- Analytics Dashboard (Optional) ---
 if st.session_state.gen_stats["times"]:
@@ -168,7 +169,6 @@ if st.session_state.gen_stats["times"]:
     with col3:
         st.metric("Avg Prompt/Response Length", 
                   f"{sum(stats['prompts'])//max(1, len(stats['prompts']))} / {sum(stats['responses'])//max(1, len(stats['responses']))} words")
-    # Plotly charts for additional detail
     df = pd.DataFrame({
         "Prompt Len": stats["prompts"],
         "Resp Len": stats["responses"],
@@ -185,11 +185,8 @@ show_feedback()
 with st.expander("ℹ️ About, Troubleshooting, and Usage Tips"):
     st.markdown("""
 - The app will **always display an error** if the model checkpoint can't be loaded, the model architecture doesn't match your code, or generation fails in any way.
-
 - If the AI messages are consistently blank: the checkpoint might be undertrained, always outputs EOS, or there is a code/tokenizer mismatch.
-
 - Retrain your model if you see only blank/error responses.
-
 - Need help? See the log/errors above or open an issue on GitHub!
     """)
     st.code(f"Model load status: {status}\nConversation: {st.session_state.chat}")
