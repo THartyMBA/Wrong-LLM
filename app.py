@@ -1,286 +1,152 @@
 import streamlit as st
 import torch
 from pathlib import Path
-import time
-import pandas as pd
-import plotly.express as px
-from datetime import datetime
-import json
+import traceback
 from train_wrong_llm import GPT, GPTConfig, ByteTokenizer
 
-# ========== Page Configuration and Styling ==========
-st.set_page_config(
-    page_title="Wrong LLM Demo",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
+st.set_page_config(page_title="Wrong LLM Demo", page_icon="🤖", layout="wide")
+
+st.title("🤖 Wrong LLM: Robust Demo App")
+st.write(
+    "This demo lets you interact with a GPT-like LLM trained from scratch. "
+    "All errors are clearly shown to help you debug any issues with the model or deployment."
 )
 
-# Custom CSS for better UI
-st.markdown("""
-    <style>
-    .chat-message {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-        display: flex;
-        flex-direction: column;
-    }
-    .human-message {
-        background-color: #e3f2fd;
-    }
-    .ai-message {
-        background-color: #f3e5f5;
-    }
-    .message-content {
-        margin-top: 0.5rem;
-    }
-    .metrics-card {
-        background-color: #f5f5f5;
-        padding: 1rem;
-        border-radius: 0.5rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ========== Session State Management ==========
-if 'conversation_history' not in st.session_state:
-    st.session_state.conversation_history = []
-if 'generation_stats' not in st.session_state:
-    st.session_state.generation_stats = {
-        'timestamps': [],
-        'prompt_lengths': [],
-        'response_lengths': [],
-        'generation_times': []
-    }
-if 'total_generations' not in st.session_state:
-    st.session_state.total_generations = 0
-
-# ========== Model Loading and Generation ==========
-@st.cache_resource(show_spinner="Loading model and weights...", max_entries=1)
-def load_model_and_tokenizer():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg = GPTConfig()
-    tokenizer = ByteTokenizer()
-    model = GPT(cfg).to(device)
-
-    checkpoint_path = Path("wrong_llm.pt")
-    if not checkpoint_path.exists():
-        return None, None, device, "Checkpoint not found! Train first."
-    
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model"])
-    model.eval()
-    return model, tokenizer, device, "Model loaded ✔️ (device: %s)" % device
-
-def generate_text(model, tokenizer, prompt, device, max_tokens=100, temperature=0.7):
-    start_time = time.time()
-    model.eval()
-    with torch.no_grad():
-        tokens = tokenizer.encode(prompt)
-        input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
-        generated_tokens = []
-        
-        for _ in range(max_tokens):
-            logits, _ = model(input_ids)
-            next_token_logits = logits[0, -1, :] / temperature
-            probs = torch.softmax(next_token_logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1).item()
-            
-            if next_token == tokenizer.EOS:
-                break
-                
-            generated_tokens.append(next_token)
-            input_ids = torch.tensor([tokens + generated_tokens], dtype=torch.long, device=device)
-        
-        response = tokenizer.decode(generated_tokens)
-        generation_time = time.time() - start_time
-        
-        return response.strip(), generation_time
-
-# ========== Sidebar Controls ==========
-with st.sidebar:
-    st.title("🛠️ Model Controls")
-    
-    max_tokens = st.slider(
-        "Maximum tokens to generate:",
-        min_value=20,
-        max_value=400,
-        value=100,
-        step=10,
-        help="Controls the length of generated text"
-    )
-    
-    temperature = st.slider(
-        "Temperature:",
-        min_value=0.1,
-        max_value=1.5,
-        value=0.7,
-        step=0.1,
-        help="Higher values make output more random, lower values more focused"
-    )
-    
-    st.divider()
-    
-    if st.button("Clear Conversation", type="secondary"):
-        st.session_state.conversation_history = []
-        st.session_state.generation_stats = {
-            'timestamps': [],
-            'prompt_lengths': [],
-            'response_lengths': [],
-            'generation_times': []
-        }
-        st.success("Conversation cleared!")
-
-    if st.button("Export Conversation"):
-        conversation_data = {
-            "history": st.session_state.conversation_history,
-            "stats": st.session_state.generation_stats,
-            "metadata": {
-                "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "total_generations": st.session_state.total_generations
-            }
-        }
-        st.download_button(
-            "Download JSON",
-            data=json.dumps(conversation_data, indent=2),
-            file_name="conversation_export.json",
-            mime="application/json"
-        )
-
-# ========== Main Interface ==========
-st.title("🤖 Wrong LLM: Custom Language Model Demo")
-st.markdown("""
-This demo showcases a language model built entirely from scratch. 
-The model is intentionally trained on corrupted data to demonstrate original implementation.
-""")
-
-# Load model
-model, tokenizer, device, status = load_model_and_tokenizer()
-st.success(status) if model else st.error(status)
-
-if not model:
+# Helper functions for better feedback
+def model_error_ui(msg):
+    st.error(f"🚨 {msg}")
     st.stop()
 
-# Chat interface
-chat_container = st.container()
-with chat_container:
-    for idx, message in enumerate(st.session_state.conversation_history):
-        if message["role"] == "human":
-            st.markdown(f"""
-                <div class="chat-message human-message">
-                    <div><strong>You:</strong></div>
-                    <div class="message-content">{message["content"]}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-                <div class="chat-message ai-message">
-                    <div><strong>AI:</strong></div>
-                    <div class="message-content">{message["content"]}</div>
-                </div>
-            """, unsafe_allow_html=True)
+def status_info(msg):
+    st.info(f"ℹ️ {msg}")
 
-# Input form
-with st.form(key="chat_form"):
-    user_input = st.text_area("Your message:", key="user_input", height=100)
-    cols = st.columns([1, 1, 4])
-    with cols[0]:
-        submit = st.form_submit_button("Send", use_container_width=True)
-    with cols[1]:
-        clear = st.form_submit_button("Clear", use_container_width=True)
+def log_debug(msg):
+    print(f"[DEBUG] {msg}")
 
-if submit and user_input.strip():
-    # Add user message to history
-    st.session_state.conversation_history.append({
-        "role": "human",
-        "content": user_input,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-    
-    # Generate response
-    with st.spinner("Thinking..."):
-        response, gen_time = generate_text(
-            model, tokenizer, user_input, device,
-            max_tokens=max_tokens, temperature=temperature
-        )
-    
-    # Add AI response to history
-    st.session_state.conversation_history.append({
-        "role": "ai",
-        "content": response,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-    
-    # Update statistics
-    st.session_state.generation_stats['timestamps'].append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    st.session_state.generation_stats['prompt_lengths'].append(len(user_input.split()))
-    st.session_state.generation_stats['response_lengths'].append(len(response.split()))
-    st.session_state.generation_stats['generation_times'].append(gen_time)
-    st.session_state.total_generations += 1
-    
-    # Rerun to update chat display
-    st.rerun()
+def log_exception(e):
+    st.error(f"🛑 Error: {e!r}")
+    traceback.print_exc()
 
-if clear:
-    st.session_state.conversation_history = []
-    st.rerun()
+# Model loading with clear user/dev feedback
+@st.cache_resource(show_spinner="Loading model...", max_entries=1)
+def load_model_and_tokenizer():
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        cfg = GPTConfig()
+        tokenizer = ByteTokenizer()
+        model = GPT(cfg).to(device)
+        checkpoint_path = Path("wrong_llm.pt")
+        if not checkpoint_path.exists():
+            return None, None, device, "Model checkpoint file (wrong_llm.pt) is missing! Please upload or train the model."
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            model.load_state_dict(checkpoint["model"])
+            model.eval()
+        except Exception as e:
+            return None, None, device, f"Unable to load model checkpoint! Details: {e}"
+        return model, tokenizer, device, f"Model loaded successfully! (device: {device})"
+    except Exception as e:
+        return None, None, "cpu", f"Unexpected error during model load: {e}"
 
-# ========== Analytics Dashboard ==========
-st.divider()
-st.header("📊 Generation Analytics")
+def generate_text(model, tokenizer, prompt, device, max_tokens=100, temperature=0.7):
+    try:
+        if not prompt or not isinstance(prompt, str) or prompt.strip() == "":
+            return None, "Prompt is empty. Please provide a prompt."
+        model.eval()
+        with torch.no_grad():
+            tokens = tokenizer.encode(prompt)
+            input_ids = torch.tensor([tokens], dtype=torch.long, device=device)
+            generated_tokens = []
+            for _ in range(max_tokens):
+                logits, _ = model(input_ids)
+                next_token_logits = logits[0, -1, :] / temperature
+                probs = torch.softmax(next_token_logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1).item()
+                if next_token == tokenizer.EOS:
+                    break
+                generated_tokens.append(next_token)
+                input_ids = torch.tensor([tokens + generated_tokens], dtype=torch.long, device=device)
+            if not generated_tokens:
+                return "", "Model returned no tokens. This may mean the model or checkpoint is malformed, or the prompt triggers EOS at the start."
+            response = tokenizer.decode(generated_tokens)
+            if not response.strip():
+                return "", "Model output was blank. This hints at model undertraining, a bad checkpoint, or an encoding mismatch."
+            return response.strip(), None
+    except Exception as e:
+        return None, f"Exception during generation: {e}"
 
-if st.session_state.total_generations > 0:
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Generations", st.session_state.total_generations)
-    
-    with col2:
-        avg_time = sum(st.session_state.generation_stats['generation_times']) / len(st.session_state.generation_stats['generation_times'])
-        st.metric("Avg. Generation Time", f"{avg_time:.2f}s")
-    
-    with col3:
-        avg_prompt_len = sum(st.session_state.generation_stats['prompt_lengths']) / len(st.session_state.generation_stats['prompt_lengths'])
-        st.metric("Avg. Prompt Length", f"{avg_prompt_len:.1f} words")
-    
-    with col4:
-        avg_response_len = sum(st.session_state.generation_stats['response_lengths']) / len(st.session_state.generation_stats['response_lengths'])
-        st.metric("Avg. Response Length", f"{avg_response_len:.1f} words")
+# Sidebar parameters
+with st.sidebar:
+    st.header("Generation Settings")
+    max_tokens = st.slider("Maximum tokens", 16, 256, 100, step=8)
+    temperature = st.slider("Temperature", 0.1, 1.5, 0.7, 0.1)
+    st.markdown("---")
+    st.caption("Useful Links")
+    st.markdown("[GitHub Repo (public)](https://github.com/yourusername/wrong-llm-demo)")
+    st.markdown("[Project README](https://github.com/yourusername/wrong-llm-demo#readme)")
 
-    # Visualization
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Generation time trend
-        df_times = pd.DataFrame({
-            'Generation': range(1, len(st.session_state.generation_stats['generation_times']) + 1),
-            'Time (s)': st.session_state.generation_stats['generation_times']
-        })
-        fig_times = px.line(df_times, x='Generation', y='Time (s)', 
-                           title='Generation Time Trend')
-        st.plotly_chart(fig_times, use_container_width=True)
-    
-    with col2:
-        # Length comparison
-        df_lengths = pd.DataFrame({
-            'Generation': range(1, len(st.session_state.generation_stats['prompt_lengths']) + 1),
-            'Prompt Length': st.session_state.generation_stats['prompt_lengths'],
-            'Response Length': st.session_state.generation_stats['response_lengths']
-        })
-        fig_lengths = px.line(df_lengths, x='Generation', 
-                            y=['Prompt Length', 'Response Length'],
-                            title='Prompt vs Response Length')
-        st.plotly_chart(fig_lengths, use_container_width=True)
+# Model and tokenizer load
+status_info("Initializing and loading model (this will fail fast with a clear error if something is wrong).")
+model, tokenizer, device, status = load_model_and_tokenizer()
+log_debug(f"Model load status: {status}")
 
+if not model:
+    model_error_ui(status)
 else:
-    st.info("Start a conversation to see analytics!")
+    st.success(status)
 
-# ========== Footer ==========
-st.divider()
-st.markdown("""
-<div style="text-align: center">
-    <p>Built with ❤️ using PyTorch and Streamlit</p>
-    <p><a href="https://github.com/yourusername/wrong-llm">View on GitHub</a></p>
-</div>
-""", unsafe_allow_html=True)
+conversation = st.session_state.get("conversation", [])
+
+# Chat UI
+st.markdown("### 💬 Chat")
+prompt = st.text_area("Your prompt:", value="", height=100, key="prompt_text", placeholder="Type any message to the model...")
+
+if st.button("Generate", type="primary"):
+    if not prompt or prompt.strip() == "":
+        st.warning("Prompt cannot be empty.")
+    else:
+        conversation.append(("You", prompt))
+        with st.spinner("Generating response..."):
+            log_debug(f"Submitting prompt: {repr(prompt)}")
+            response, gen_error = generate_text(model, tokenizer, prompt, device, max_tokens, temperature)
+        if gen_error:
+            st.error(f"❌ AI response generation failed: {gen_error}")
+            log_debug(f"Error during generation: {gen_error}")
+            conversation.append(("AI (error)", f"[ERROR]: {gen_error}"))
+        else:
+            if response:
+                conversation.append(("Wrong LLM", response))
+                st.markdown(f"**Wrong LLM:** {response}")
+            else:
+                # Defensive: should not happen because generate_text covers reasons
+                st.error("🚨 Model produced a blank response. Possible model checkpoint or software issue.")
+                log_debug("Model produced blank response.")
+
+        # Save conversation in session state for basic history
+        st.session_state["conversation"] = conversation
+
+# Show conversation history
+if st.session_state.get("conversation"):
+    st.markdown("#### Conversation History")
+    for sender, text in st.session_state["conversation"]:
+        if sender == "You":
+            st.markdown(f"<div style='background:#e3f2fd;padding:0.5em;border-radius:4px;margin-bottom:2px'><b>You:</b> {text}</div>", unsafe_allow_html=True)
+        elif sender == "Wrong LLM":
+            st.markdown(f"<div style='background:#ede7f6;padding:0.5em;border-radius:4px;margin-bottom:2px'><b>Wrong LLM:</b> {text}</div>", unsafe_allow_html=True)
+        else:  # error or unknown
+            st.markdown(f"<div style='background:#ffebee;padding:0.5em;border-radius:4px;margin-bottom:2px'><b>{sender}:</b> {text}</div>", unsafe_allow_html=True)
+
+# Developer debugging and suggestions
+with st.expander("🛠️ Debug Diagnostics and Next Steps"):
+    st.markdown("""
+- **Model diagnostics:** If the model checkpoint is not found or is corrupt, the error appears above.
+- **Prompt diagnostics:** If your prompt is empty, you get a warning. If the model returns blank, you'll see a clear error.
+- **Model returns blank:** This is most often due to a corrupted or undertrained checkpoint, or the model always producing EOS immediately (common if training was poor or not enough steps). Try retraining or checking your training script.
+- **For further debugging:** Check logs in Streamlit Cloud ('Manage App') or in your CLI output for stack traces.
+
+**Debug info (for developers):**
+""")
+    st.code(f"Model load status: {status}\nPrompt: {prompt}\nConversation: {conversation}")
+
+st.caption("💡 If you encounter persistent blank AI responses, check your training run for issues and verify your model checkpoint is valid and matches the expected architecture and tokenizer.")
+
