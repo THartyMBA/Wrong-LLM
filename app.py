@@ -43,14 +43,21 @@ def show_feedback():
 @st.cache_resource(show_spinner="Loading model weights...", max_entries=1)
 def get_model_and_tokenizer():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    checkpoint_path = "wrong_llm.pt"
+    
+    # Convert string to a Path object for proper file system checks.
+    checkpoint_path = Path("wrong_llm.pt")
+    st.write("Looking for checkpoint at:", checkpoint_path.resolve())
+    st.write("File exists?", checkpoint_path.exists())
+    
     if not checkpoint_path.exists():
         return None, None, device, "Checkpoint 'wrong_llm.pt' missing. Upload or train first."
+    
     try:
         checkpoint = torch.load(checkpoint_path, map_location=device)
     except Exception as e:
         log_error("Failed to load .pt file.", exc=e)
         return None, None, device, f"Failed to load wrong_llm.pt. Details: {repr(e)}"
+    
     try:
         cfg = GPTConfig(**checkpoint.get("cfg", {}))
         tokenizer = ByteTokenizer()
@@ -60,7 +67,9 @@ def get_model_and_tokenizer():
     except Exception as e:
         log_error("Failed to re-instantiate GPT model.", exc=e)
         return None, None, device, f"Failed to reconstruct GPT. Code/settings might not match checkpoint. {repr(e)}"
+    
     return model, tokenizer, device, f"Model loaded. Device: {device}"
+
 
 # --- Text Generation Logic ---
 def generate_text(model, tokenizer, prompt, device, max_tokens=100, temperature=0.7):
