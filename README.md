@@ -36,7 +36,7 @@ Virtual environment (recommended)
 Installation
 Clone the repository:
 
-git clone https://github.com/yourusername/wrong-llm.git
+git clone https://github.com/THartyMBA/wrong-llm.git
 cd wrong-llm
 
 
