@@ -43,7 +43,7 @@ def show_feedback():
 @st.cache_resource(show_spinner="Loading model weights...", max_entries=1)
 def get_model_and_tokenizer():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    checkpoint_path = Path("wrong_llm.pt")
+    checkpoint_path = "wrong_llm.pt"
     if not checkpoint_path.exists():
         return None, None, device, "Checkpoint 'wrong_llm.pt' missing. Upload or train first."
     try:
