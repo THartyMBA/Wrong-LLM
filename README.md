@@ -73,7 +73,7 @@ Architecture: Custom GPT-like transformer
 Parameters: ~110M
 Training Data: Corrupted OpenWebText
 Tokenizer: Custom byte-level implementation
-Training Duration: ~2 hours on GPU
+Training Duration: ~2 days on basic home computer; 32MB RAM
 
 🤝 Contributing
 Feel free to submit issues, fork the repository, and create pull requests for any improvements.
