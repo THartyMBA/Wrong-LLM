@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import json
-from inference_script import GPT, GPTConfig, ByteTokenizer
+from train_wrong_llm import GPT, GPTConfig, ByteTokenizer
 
 # ========== Page Configuration and Styling ==========
 st.set_page_config(
