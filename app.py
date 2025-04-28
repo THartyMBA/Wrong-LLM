@@ -1,3 +1,6 @@
+import os
+# Ignore problematic Torch internal modules for Streamlit's file watcher.
+os.environ["STREAMLIT_IGNORE_FILES"] = "torch/_classes.py"
 import streamlit as st
 import torch
 from pathlib import Path
